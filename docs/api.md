@@ -52,15 +52,15 @@ FastAPI 也会自动生成：
 }
 ```
 
-## 3. 搜索图片
+## 3. 文本搜索图片
 
 - 方法：`POST`
 - 路径：`/api/images/search`
-- Content-Type：`multipart/form-data`
+- Content-Type：`application/x-www-form-urlencoded` 或 `multipart/form-data`
 
-表单字段：
+字段：
 
-- `file`: 查询图片，必填
+- `query`: 文本查询，必填
 - `top_k`: 返回数量，选填，默认 5
 
 响应示例：

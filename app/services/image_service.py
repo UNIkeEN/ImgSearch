@@ -87,7 +87,13 @@ class ImageService:
 
     def search_by_image(self, query_path: Path, top_k: int, db: Session) -> list[dict]:
         query_vector = self.model_service.embed_image(query_path)
+        return self._search_by_vector(query_vector=query_vector, top_k=top_k, db=db)
 
+    def search_by_text(self, query_text: str, top_k: int, db: Session) -> list[dict]:
+        query_vector = self.model_service.embed_text(query_text)
+        return self._search_by_vector(query_vector=query_vector, top_k=top_k, db=db)
+
+    def _search_by_vector(self, query_vector: list[float], top_k: int, db: Session) -> list[dict]:
         stmt = select(ImageRecord).where(ImageRecord.status == ImageStatus.READY.value)
         candidates = list(db.scalars(stmt).all())
 

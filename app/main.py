@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import gradio as gr
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -111,22 +112,15 @@ def delete_image(
 
 @app.post("/api/images/search", response_model=SearchResponse, tags=["search"])
 async def search_images(
-    file: UploadFile = File(...),
+    query: str = Form(...),
     top_k: int = Form(default=settings.search_top_k),
     db: Session = Depends(get_db),
     image_service: ImageService = Depends(get_image_service),
 ):
-    suffix = Path(file.filename or "query-image").suffix or ".jpg"
-    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        temp_path = Path(tmp.name)
-
     try:
-        results = image_service.search_by_image(query_path=temp_path, top_k=top_k, db=db)
+        results = image_service.search_by_text(query_text=query, top_k=top_k, db=db)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    finally:
-        temp_path.unlink(missing_ok=True)
 
     return SearchResponse(
         status="success",
@@ -145,6 +139,22 @@ async def search_images(
     )
 
 
+@app.get("/manifest.json", include_in_schema=False)
+def manifest():
+    return JSONResponse(
+        {
+            "name": settings.app_name,
+            "short_name": "ImgSearch",
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#ffffff",
+            "theme_color": "#1f2937",
+            "icons": [],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
+
 @app.get("/api/model/status", response_model=ModelStatusResponse, tags=["model"])
 def model_status(model_service: ModelService = Depends(get_model_service)):
     status = model_service.status()
@@ -158,6 +168,5 @@ def model_status(model_service: ModelService = Depends(get_model_service)):
     )
 
 
-gradio_api_base = f"http://127.0.0.1:{settings.app_port}"
-gradio_app = build_gradio_app(gradio_api_base)
+gradio_app = build_gradio_app()
 app = gr.mount_gradio_app(app, gradio_app, path=settings.gradio_path)

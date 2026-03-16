@@ -13,6 +13,9 @@ class ModelService:
     def embed_image(self, image_path: Path) -> list[float]:
         return self.backend.embed_image(image_path)
 
+    def embed_text(self, text: str) -> list[float]:
+        return self.backend.embed_text(text)
+
     def status(self) -> ModelRuntimeStatus:
         return self.backend.model_status()
 

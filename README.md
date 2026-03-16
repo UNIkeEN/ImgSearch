@@ -9,7 +9,7 @@
 - 基于 Hugging Face 下载并加载 `Qwen/Qwen3-VL-Embedding-2B`
 - 通过配置切换到 `8B` 或其他兼容模型
 - 对模型调用做了抽象，未来可替换为云端 embedding 服务
-- Gradio 页面用于操作添加图片、删除图片、搜索图片
+- Gradio 页面用于操作添加图片、删除图片、文本搜索图片
 
 ## Quick Start
 
@@ -63,3 +63,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## API Summary
 
 详细接口说明见 [docs/api.md](/Users/unicorn/code/Projects/Toys/ImgSearch/docs/api.md)。
+
+## Current Behavior
+
+- 添加图片：上传图片后异步生成图片 embedding
+- 搜索图片：当前为“文本搜图”，即输入文字查询，返回语义最接近的已入库图片

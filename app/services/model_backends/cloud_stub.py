@@ -21,3 +21,6 @@ class CloudEmbeddingBackendStub(EmbeddingBackend):
 
     def embed_image(self, image_path: Path) -> list[float]:
         raise NotImplementedError(f"Cloud embedding backend is not implemented for {image_path}.")
+
+    def embed_text(self, text: str) -> list[float]:
+        raise NotImplementedError(f"Cloud embedding backend is not implemented for text query: {text}")

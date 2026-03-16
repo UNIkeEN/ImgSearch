@@ -49,6 +49,34 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             self._last_error = None
             return self._instance
 
+    def _normalize_vector(self, vector) -> list[float]:
+        if hasattr(vector, "tolist"):
+            return [float(value) for value in vector.tolist()]
+        return [float(value) for value in vector]
+
+    def _invoke_text_embedding(self, instance, text: str):
+        candidate_calls = [
+            lambda: instance.embed_text(text),
+            lambda: instance.get_text_embeddings([text], batch_size=self.settings.model_batch_size),
+            lambda: instance.get_embeddings([text], batch_size=self.settings.model_batch_size),
+            lambda: instance.get_embeddings(
+                [text],
+                batch_size=self.settings.model_batch_size,
+                input_type="text",
+            ),
+        ]
+        last_error = None
+        for candidate in candidate_calls:
+            try:
+                result = candidate()
+                if result:
+                    return result
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+        if last_error is not None:
+            raise RuntimeError(f"Text embedding failed: {last_error}") from last_error
+        raise RuntimeError("Text embedding backend returned no vectors.")
+
     def model_status(self) -> ModelRuntimeStatus:
         loaded = self._instance is not None
         healthy = self._last_error is None
@@ -74,10 +102,19 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             if not vectors:
                 raise RuntimeError("Embedding backend returned no vectors.")
 
-            first_vector = vectors[0]
-            if hasattr(first_vector, "tolist"):
-                return [float(value) for value in first_vector.tolist()]
-            return [float(value) for value in first_vector]
+            return self._normalize_vector(vectors[0])
+        except Exception as exc:  # noqa: BLE001
+            self._last_error = str(exc)
+            raise
+        finally:
+            self._busy = False
+
+    def embed_text(self, text: str) -> list[float]:
+        self._busy = True
+        try:
+            instance = self._ensure_loaded()
+            vectors = self._invoke_text_embedding(instance, text)
+            return self._normalize_vector(vectors[0])
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
             raise

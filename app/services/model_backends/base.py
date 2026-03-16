@@ -21,3 +21,7 @@ class EmbeddingBackend(ABC):
     @abstractmethod
     def embed_image(self, image_path: Path) -> list[float]:
         raise NotImplementedError
+
+    @abstractmethod
+    def embed_text(self, text: str) -> list[float]:
+        raise NotImplementedError
