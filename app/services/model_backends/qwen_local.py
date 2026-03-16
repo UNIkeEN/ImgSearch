@@ -126,6 +126,20 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             return [float(value) for value in vector.tolist()]
         return [float(value) for value in vector]
 
+    def _extract_first_vector(self, result):
+        if result is None:
+            return None
+        if hasattr(result, "ndim"):
+            if result.ndim == 1:
+                return result
+            if result.ndim >= 2 and len(result) > 0:
+                return result[0]
+        if isinstance(result, (list, tuple)):
+            if not result:
+                return None
+            return result[0]
+        return result
+
     def _invoke_text_embedding(self, instance, text: str):
         candidate_calls = [
             lambda: instance.process([{"text": text}]),
@@ -136,8 +150,9 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         for candidate in candidate_calls:
             try:
                 result = candidate()
-                if result:
-                    return result
+                first_vector = self._extract_first_vector(result)
+                if first_vector is not None:
+                    return first_vector
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
         if last_error is not None:
@@ -165,21 +180,22 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
                 lambda: instance.process([{"image": str(image_path)}]),
                 lambda: instance.embed_image(str(image_path)),
             ]
-            vectors = None
+            first_vector = None
             last_error = None
             for candidate in candidate_calls:
                 try:
-                    vectors = candidate()
-                    if vectors:
+                    result = candidate()
+                    first_vector = self._extract_first_vector(result)
+                    if first_vector is not None:
                         break
                 except Exception as exc:  # noqa: BLE001
                     last_error = exc
-            if not vectors:
+            if first_vector is None:
                 if last_error is not None:
                     raise RuntimeError(f"Image embedding failed: {last_error}") from last_error
                 raise RuntimeError("Embedding backend returned no vectors.")
 
-            return self._normalize_vector(vectors[0])
+            return self._normalize_vector(first_vector)
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
             self._logger.exception("Image embedding failed: image_path=%s", image_path)
@@ -191,8 +207,8 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         self._busy = True
         try:
             instance = self._ensure_loaded()
-            vectors = self._invoke_text_embedding(instance, text)
-            return self._normalize_vector(vectors[0])
+            first_vector = self._invoke_text_embedding(instance, text)
+            return self._normalize_vector(first_vector)
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
             self._logger.exception("Text embedding failed: query=%s", text)
