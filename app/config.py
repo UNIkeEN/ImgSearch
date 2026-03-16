@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./data/app.db", alias="DATABASE_URL")
     upload_dir: Path = Field(default=Path("./data/uploads"), alias="UPLOAD_DIR")
     model_cache_dir: Path = Field(default=Path("./models"), alias="MODEL_CACHE_DIR")
+    model_local_path: Path | None = Field(default=None, alias="MODEL_LOCAL_PATH")
 
     model_source: str = Field(default="local_huggingface_qwen", alias="MODEL_SOURCE")
     model_repo_id: str = Field(default="Qwen/Qwen3-VL-Embedding-2B", alias="MODEL_REPO_ID")
@@ -33,5 +34,7 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.model_cache_dir.mkdir(parents=True, exist_ok=True)
+    if settings.model_local_path is not None:
+        settings.model_local_path = settings.model_local_path.expanduser().resolve()
     Path("./data").mkdir(parents=True, exist_ok=True)
     return settings

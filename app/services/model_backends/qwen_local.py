@@ -3,9 +3,10 @@ import inspect
 import threading
 from pathlib import Path
 
-from huggingface_hub import snapshot_download
+from huggingface_hub import LocalEntryNotFoundError, snapshot_download
 
 from app.config import Settings
+from app.logging_utils import get_logger
 from app.services.model_backends.base import EmbeddingBackend, ModelRuntimeStatus
 
 
@@ -16,6 +17,7 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         self._lock = threading.Lock()
         self._busy = False
         self._last_error: str | None = None
+        self._logger = get_logger(__name__)
 
     def _load_module(self, module_path: Path):
         spec = importlib.util.spec_from_file_location("qwen3_vl_embedding_remote", module_path)
@@ -25,6 +27,29 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         spec.loader.exec_module(module)
         return module
 
+    def _resolve_repo_path(self) -> Path:
+        if self.settings.model_local_path is not None:
+            repo_path = self.settings.model_local_path
+            if not repo_path.exists():
+                raise RuntimeError(f"MODEL_LOCAL_PATH does not exist: {repo_path}")
+            self._logger.info("Loading Qwen model from MODEL_LOCAL_PATH=%s", repo_path)
+            return repo_path
+
+        try:
+            repo_path = snapshot_download(
+                repo_id=self.settings.model_repo_id,
+                cache_dir=str(self.settings.model_cache_dir),
+                local_files_only=True,
+            )
+        except LocalEntryNotFoundError as exc:
+            raise RuntimeError(
+                "Model was not found in local Hugging Face cache. "
+                "Set MODEL_LOCAL_PATH to your downloaded model directory, "
+                "or download the model into the local cache first."
+            ) from exc
+        self._logger.info("Loading Qwen model from local cache: repo_id=%s path=%s", self.settings.model_repo_id, repo_path)
+        return Path(repo_path)
+
     def _ensure_loaded(self):
         if self._instance is not None:
             return self._instance
@@ -33,17 +58,15 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             if self._instance is not None:
                 return self._instance
 
-            repo_path = snapshot_download(
-                repo_id=self.settings.model_repo_id,
-                cache_dir=str(self.settings.model_cache_dir),
-            )
-            module = self._load_module(Path(repo_path) / "scripts" / "qwen3_vl_embedding.py")
+            repo_path = self._resolve_repo_path()
+            module = self._load_module(repo_path / "scripts" / "qwen3_vl_embedding.py")
             embedder_cls = getattr(module, "Qwen3VLEmbedder", None)
             if embedder_cls is None:
                 raise RuntimeError("Qwen3VLEmbedder was not found in downloaded model repository.")
 
-            self._instance = self._build_embedder(embedder_cls, repo_path)
+            self._instance = self._build_embedder(embedder_cls, str(repo_path))
             self._last_error = None
+            self._logger.info("Qwen embedder loaded successfully: repo=%s device=%s", repo_path, self.settings.device)
             return self._instance
 
     def _build_embedder(self, embedder_cls, repo_path: str):
@@ -83,9 +106,11 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
     def load(self) -> None:
         self._busy = True
         try:
+            self._logger.info("Preloading Qwen embedder")
             self._ensure_loaded()
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
+            self._logger.exception("Failed to preload Qwen embedder")
             raise
         finally:
             self._busy = False
@@ -97,14 +122,9 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
 
     def _invoke_text_embedding(self, instance, text: str):
         candidate_calls = [
+            lambda: instance.process([{"text": text}]),
             lambda: instance.embed_text(text),
             lambda: instance.get_text_embeddings([text], batch_size=self.settings.model_batch_size),
-            lambda: instance.get_embeddings([text], batch_size=self.settings.model_batch_size),
-            lambda: instance.get_embeddings(
-                [text],
-                batch_size=self.settings.model_batch_size,
-                input_type="text",
-            ),
         ]
         last_error = None
         for candidate in candidate_calls:
@@ -135,17 +155,28 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         self._busy = True
         try:
             instance = self._ensure_loaded()
-            vectors = instance.get_embeddings(
-                [str(image_path)],
-                max_length=2048,
-                batch_size=self.settings.model_batch_size,
-            )
+            candidate_calls = [
+                lambda: instance.process([{"image": str(image_path)}]),
+                lambda: instance.embed_image(str(image_path)),
+            ]
+            vectors = None
+            last_error = None
+            for candidate in candidate_calls:
+                try:
+                    vectors = candidate()
+                    if vectors:
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
             if not vectors:
+                if last_error is not None:
+                    raise RuntimeError(f"Image embedding failed: {last_error}") from last_error
                 raise RuntimeError("Embedding backend returned no vectors.")
 
             return self._normalize_vector(vectors[0])
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
+            self._logger.exception("Image embedding failed: image_path=%s", image_path)
             raise
         finally:
             self._busy = False
@@ -158,6 +189,7 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             return self._normalize_vector(vectors[0])
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
+            self._logger.exception("Text embedding failed: query=%s", text)
             raise
         finally:
             self._busy = False

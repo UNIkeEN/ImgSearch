@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.logging_utils import get_logger
 from app.models import ImageRecord, ImageStatus
 from app.utils import build_storage_path, cosine_similarity, load_json_vector, save_json_vector
 
@@ -13,6 +14,7 @@ class ImageService:
     def __init__(self, model_service):
         self.settings = get_settings()
         self.model_service = model_service
+        self._logger = get_logger(__name__)
 
     def save_upload(self, name: str, filename: str, content_type: str | None, file_obj: BinaryIO, db: Session) -> ImageRecord:
         safe_filename = Path(filename).name or "uploaded-image"
@@ -52,13 +54,16 @@ class ImageService:
         db.commit()
 
         try:
+            self._logger.info("Processing image embedding: id=%s path=%s", record.id, record.stored_path)
             vector = self.model_service.embed_image(Path(record.stored_path))
             record.embedding_json = save_json_vector(vector)
             record.status = ImageStatus.READY.value
             record.error_message = None
+            self._logger.info("Image embedding ready: id=%s", record.id)
         except Exception as exc:  # noqa: BLE001
             record.status = ImageStatus.FAILED.value
             record.error_message = str(exc)
+            self._logger.exception("Image embedding failed: id=%s path=%s", record.id, record.stored_path)
 
         db.commit()
         db.refresh(record)
@@ -71,6 +76,7 @@ class ImageService:
             .order_by(ImageRecord.id.asc())
         )
         records = list(db.scalars(stmt).all())
+        self._logger.info("Retrying unfinished embeddings: count=%s", len(records))
         processed: list[ImageRecord] = []
         for record in records:
             path = Path(record.stored_path)
@@ -79,6 +85,7 @@ class ImageService:
                 record.error_message = f"Image file not found: {record.stored_path}"
                 db.commit()
                 db.refresh(record)
+                self._logger.warning("Skipping missing image file during retry: id=%s path=%s", record.id, record.stored_path)
                 processed.append(record)
                 continue
             processed.append(self.process_embedding(image_id=record.id, db=db))

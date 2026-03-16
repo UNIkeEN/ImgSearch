@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.db import Base, SessionLocal, engine, get_db
 from app.dependencies import get_image_service, get_model_service
 from app.gradio_ui import build_gradio_app
+from app.logging_utils import get_logger
 from app.models import ImageRecord, ImageStatus
 from app.schemas import DeleteResponse, ImageResponse, ModelStatusResponse, SearchResponse, SearchResult
 from app.services.image_service import ImageService
@@ -19,6 +20,7 @@ from app.services.model_service import ModelService
 
 
 settings = get_settings()
+logger = get_logger(__name__)
 
 
 def to_file_url(record: ImageRecord) -> str:
@@ -45,6 +47,8 @@ def process_image_embedding(image_id: int):
     try:
         image_service = get_image_service()
         image_service.process_embedding(image_id=image_id, db=db)
+    except Exception:
+        logger.exception("Background image embedding task crashed: image_id=%s", image_id)
     finally:
         db.close()
 
@@ -57,12 +61,15 @@ async def lifespan(_: FastAPI):
         model_service.load()
     except Exception:
         # Keep the app running so the failure is visible through /api/model/status.
-        pass
+        logger.exception("Model preload failed during startup")
     else:
         db = SessionLocal()
         try:
             image_service = get_image_service()
             image_service.retry_unfinished_embeddings(db=db)
+            logger.info("Startup retry for unfinished image embeddings completed")
+        except Exception:
+            logger.exception("Startup retry for unfinished image embeddings failed")
         finally:
             db.close()
     yield
@@ -133,6 +140,7 @@ async def search_images(
     try:
         results = image_service.search_by_text(query_text=query, top_k=top_k, db=db)
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Text search failed: query=%s", query)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return SearchResponse(
