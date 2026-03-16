@@ -64,6 +64,26 @@ class ImageService:
         db.refresh(record)
         return record
 
+    def retry_unfinished_embeddings(self, db: Session) -> list[ImageRecord]:
+        stmt = (
+            select(ImageRecord)
+            .where(ImageRecord.status.in_([ImageStatus.PENDING.value, ImageStatus.FAILED.value]))
+            .order_by(ImageRecord.id.asc())
+        )
+        records = list(db.scalars(stmt).all())
+        processed: list[ImageRecord] = []
+        for record in records:
+            path = Path(record.stored_path)
+            if not path.exists():
+                record.status = ImageStatus.FAILED.value
+                record.error_message = f"Image file not found: {record.stored_path}"
+                db.commit()
+                db.refresh(record)
+                processed.append(record)
+                continue
+            processed.append(self.process_embedding(image_id=record.id, db=db))
+        return processed
+
     def list_images(self, db: Session) -> list[ImageRecord]:
         stmt = select(ImageRecord).where(ImageRecord.status != ImageStatus.DELETED.value).order_by(ImageRecord.id.desc())
         return list(db.scalars(stmt).all())

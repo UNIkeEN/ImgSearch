@@ -58,6 +58,13 @@ async def lifespan(_: FastAPI):
     except Exception:
         # Keep the app running so the failure is visible through /api/model/status.
         pass
+    else:
+        db = SessionLocal()
+        try:
+            image_service = get_image_service()
+            image_service.retry_unfinished_embeddings(db=db)
+        finally:
+            db.close()
     yield
 
 
