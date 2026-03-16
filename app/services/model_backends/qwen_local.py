@@ -3,7 +3,13 @@ import inspect
 import threading
 from pathlib import Path
 
-from huggingface_hub import LocalEntryNotFoundError, snapshot_download
+from huggingface_hub import snapshot_download
+
+try:
+    from huggingface_hub.errors import LocalEntryNotFoundError
+except ImportError:  # pragma: no cover - compatibility for older huggingface_hub
+    class LocalEntryNotFoundError(Exception):
+        pass
 
 from app.config import Settings
 from app.logging_utils import get_logger
