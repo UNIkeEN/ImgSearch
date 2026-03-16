@@ -22,6 +22,13 @@ pip install -U pip
 pip install -e .
 ```
 
+如果你之前已经装过旧版本依赖，先升级关键包：
+
+```bash
+pip install -U "transformers>=4.57.0" "qwen-vl-utils>=0.0.14" "torch>=2.8.0"
+pip install -e .
+```
+
 2. 复制配置：
 
 ```bash
@@ -45,9 +52,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - 默认模型：`Qwen/Qwen3-VL-Embedding-2B`
 - 切换模型时，仅需修改 `.env` 中的 `MODEL_REPO_ID`
 - 当前实现会使用 `huggingface_hub.snapshot_download(...)` 下载模型仓库，然后按模型卡暴露的 `Qwen3VLEmbedder` 接口进行本地加载
+- 为兼容不同版本的 Qwen 远程代码，加载逻辑会优先尝试最小构造参数，再在实例创建后迁移到目标设备
 - 服务启动时会主动预加载模型；如果预加载失败，服务仍会启动，但可通过 `/api/model/status` 查看失败信息
 - 由于 Qwen3-VL Embedding 仓库依赖远程代码，默认启用了 `TRUST_REMOTE_CODE=true`
 - 已提供 `cloud_stub` backend 占位实现，未来接云端模型时优先替换 `app/services/model_backends/` 下的实现
+- Qwen 官方模型卡当前给出的依赖要求是 `transformers>=4.57.0`、`qwen-vl-utils>=0.0.14`、`torch==2.8.0`
 
 如果后续切换为云端模型，可以只替换 `app/services/model_backends/` 下的 backend 实现，不需要改 API 层。
 

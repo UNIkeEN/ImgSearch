@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import threading
 from pathlib import Path
 
@@ -41,13 +42,43 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             if embedder_cls is None:
                 raise RuntimeError("Qwen3VLEmbedder was not found in downloaded model repository.")
 
-            self._instance = embedder_cls(
-                model_name_or_path=repo_path,
-                device=self.settings.device,
-                torch_dtype=self.settings.torch_dtype,
-            )
+            self._instance = self._build_embedder(embedder_cls, repo_path)
             self._last_error = None
             return self._instance
+
+    def _build_embedder(self, embedder_cls, repo_path: str):
+        kwargs = {"model_name_or_path": repo_path}
+        try:
+            signature = inspect.signature(embedder_cls)
+            parameters = signature.parameters
+            if "device" in parameters:
+                kwargs["device"] = self.settings.device
+            if "torch_dtype" in parameters:
+                kwargs["torch_dtype"] = self.settings.torch_dtype
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            instance = embedder_cls(**kwargs)
+        except TypeError:
+            instance = embedder_cls(model_name_or_path=repo_path)
+
+        self._move_instance_to_device(instance)
+        return instance
+
+    def _move_instance_to_device(self, instance) -> None:
+        targets = [instance]
+        model_attr = getattr(instance, "model", None)
+        if model_attr is not None:
+            targets.append(model_attr)
+
+        for target in targets:
+            to_method = getattr(target, "to", None)
+            if callable(to_method):
+                try:
+                    to_method(self.settings.device)
+                except TypeError:
+                    continue
 
     def load(self) -> None:
         self._busy = True
