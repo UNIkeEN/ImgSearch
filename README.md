@@ -45,6 +45,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - 默认模型：`Qwen/Qwen3-VL-Embedding-2B`
 - 切换模型时，仅需修改 `.env` 中的 `MODEL_REPO_ID`
 - 当前实现会使用 `huggingface_hub.snapshot_download(...)` 下载模型仓库，然后按模型卡暴露的 `Qwen3VLEmbedder` 接口进行本地加载
+- 服务启动时会主动预加载模型；如果预加载失败，服务仍会启动，但可通过 `/api/model/status` 查看失败信息
 - 由于 Qwen3-VL Embedding 仓库依赖远程代码，默认启用了 `TRUST_REMOTE_CODE=true`
 - 已提供 `cloud_stub` backend 占位实现，未来接云端模型时优先替换 `app/services/model_backends/` 下的实现
 

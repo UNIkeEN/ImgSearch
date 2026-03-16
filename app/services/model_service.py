@@ -10,6 +10,9 @@ class ModelService:
     def __init__(self, backend: EmbeddingBackend):
         self.backend = backend
 
+    def load(self) -> None:
+        self.backend.load()
+
     def embed_image(self, image_path: Path) -> list[float]:
         return self.backend.embed_image(image_path)
 

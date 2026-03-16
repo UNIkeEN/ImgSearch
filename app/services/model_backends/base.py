@@ -15,6 +15,10 @@ class ModelRuntimeStatus:
 
 class EmbeddingBackend(ABC):
     @abstractmethod
+    def load(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def model_status(self) -> ModelRuntimeStatus:
         raise NotImplementedError
 

@@ -9,6 +9,9 @@ class CloudEmbeddingBackendStub(EmbeddingBackend):
     def __init__(self, repo_id: str):
         self.repo_id = repo_id
 
+    def load(self) -> None:
+        return None
+
     def model_status(self) -> ModelRuntimeStatus:
         return ModelRuntimeStatus(
             backend="cloud_stub",

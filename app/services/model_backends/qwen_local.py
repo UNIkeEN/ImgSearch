@@ -49,6 +49,16 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
             self._last_error = None
             return self._instance
 
+    def load(self) -> None:
+        self._busy = True
+        try:
+            self._ensure_loaded()
+        except Exception as exc:  # noqa: BLE001
+            self._last_error = str(exc)
+            raise
+        finally:
+            self._busy = False
+
     def _normalize_vector(self, vector) -> list[float]:
         if hasattr(vector, "tolist"):
             return [float(value) for value in vector.tolist()]

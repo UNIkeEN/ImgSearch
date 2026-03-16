@@ -52,6 +52,12 @@ def process_image_embedding(image_id: int):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    model_service = get_model_service()
+    try:
+        model_service.load()
+    except Exception:
+        # Keep the app running so the failure is visible through /api/model/status.
+        pass
     yield
 
 
