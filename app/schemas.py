@@ -13,6 +13,7 @@ class ImageResponse(BaseModel):
     filename: str
     file_url: str
     status: ImageStatus
+    embedding_elapsed_ms: float | None = None
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -35,12 +36,16 @@ class SearchResult(BaseModel):
 class SearchResponse(BaseModel):
     status: str
     query_status: ImageStatus = Field(default=ImageStatus.READY)
+    elapsed_ms: float
+    embedding_ms: float
+    retrieval_ms: float
     results: list[SearchResult]
 
 
 class ModelStatusResponse(BaseModel):
     backend: str
     repo_id: str
+    device: str
     loaded: bool
     healthy: bool
     busy: bool

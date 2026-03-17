@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.config import get_settings
-from app.services.model_backends.base import EmbeddingBackend, ModelRuntimeStatus
+from app.services.model_backends.base import EmbeddingBackend, EmbeddingResult, ModelRuntimeStatus
 from app.services.model_backends.cloud_stub import CloudEmbeddingBackendStub
 from app.services.model_backends.qwen_local import QwenLocalEmbeddingBackend
 
@@ -13,10 +13,10 @@ class ModelService:
     def load(self) -> None:
         self.backend.load()
 
-    def embed_image(self, image_path: Path) -> list[float]:
+    def embed_image(self, image_path: Path) -> EmbeddingResult:
         return self.backend.embed_image(image_path)
 
-    def embed_text(self, text: str) -> list[float]:
+    def embed_text(self, text: str) -> EmbeddingResult:
         return self.backend.embed_text(text)
 
     def status(self) -> ModelRuntimeStatus:

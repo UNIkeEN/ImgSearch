@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from typing import BinaryIO
 
@@ -27,6 +28,7 @@ class ImageService:
             filename=safe_filename,
             stored_path=str(storage_path.resolve()),
             mime_type=content_type,
+            embedding_elapsed_ms=None,
             status=ImageStatus.PENDING.value,
         )
         db.add(record)
@@ -39,6 +41,7 @@ class ImageService:
         if record is None:
             raise ValueError(f"Image {image_id} does not exist.")
         record.status = ImageStatus.PROCESSING.value
+        record.embedding_elapsed_ms = None
         record.error_message = None
         db.commit()
         db.refresh(record)
@@ -50,18 +53,26 @@ class ImageService:
             raise ValueError(f"Image {image_id} does not exist.")
 
         record.status = ImageStatus.PROCESSING.value
+        record.embedding_elapsed_ms = None
         record.error_message = None
         db.commit()
 
         try:
             self._logger.info("Processing image embedding: id=%s path=%s", record.id, record.stored_path)
-            vector = self.model_service.embed_image(Path(record.stored_path))
-            record.embedding_json = save_json_vector(vector)
+            embedding_result = self.model_service.embed_image(Path(record.stored_path))
+            record.embedding_json = save_json_vector(embedding_result.vector)
+            record.embedding_elapsed_ms = embedding_result.inference_seconds * 1000
             record.status = ImageStatus.READY.value
             record.error_message = None
-            self._logger.info("Image embedding ready: id=%s", record.id)
+            self._logger.info(
+                "Image embedding ready: id=%s device=%s inference_ms=%.2f",
+                record.id,
+                self.settings.device,
+                embedding_result.inference_seconds * 1000,
+            )
         except Exception as exc:  # noqa: BLE001
             record.status = ImageStatus.FAILED.value
+            record.embedding_elapsed_ms = None
             record.error_message = str(exc)
             self._logger.exception("Image embedding failed: id=%s path=%s", record.id, record.stored_path)
 
@@ -112,13 +123,52 @@ class ImageService:
                 parent.rmdir()
         return True
 
-    def search_by_image(self, query_path: Path, top_k: int, db: Session) -> list[dict]:
-        query_vector = self.model_service.embed_image(query_path)
-        return self._search_by_vector(query_vector=query_vector, top_k=top_k, db=db)
+    def search_by_image(self, query_path: Path, top_k: int, db: Session) -> dict:
+        started_at = time.perf_counter()
+        embedding_result = self.model_service.embed_image(query_path)
+        retrieval_started_at = time.perf_counter()
+        results = self._search_by_vector(query_vector=embedding_result.vector, top_k=top_k, db=db)
+        retrieval_seconds = time.perf_counter() - retrieval_started_at
+        search_seconds = time.perf_counter() - started_at
+        self._logger.info(
+            "Image search completed: device=%s top_k=%s results=%s embedding_ms=%.2f retrieval_ms=%.2f search_ms=%.2f",
+            self.settings.device,
+            top_k,
+            len(results),
+            embedding_result.inference_seconds * 1000,
+            retrieval_seconds * 1000,
+            search_seconds * 1000,
+        )
+        return {
+            "results": results,
+            "embedding_ms": embedding_result.inference_seconds * 1000,
+            "retrieval_ms": retrieval_seconds * 1000,
+            "elapsed_ms": search_seconds * 1000,
+        }
 
-    def search_by_text(self, query_text: str, top_k: int, db: Session) -> list[dict]:
-        query_vector = self.model_service.embed_text(query_text)
-        return self._search_by_vector(query_vector=query_vector, top_k=top_k, db=db)
+    def search_by_text(self, query_text: str, top_k: int, db: Session) -> dict:
+        started_at = time.perf_counter()
+        embedding_result = self.model_service.embed_text(query_text)
+        retrieval_started_at = time.perf_counter()
+        results = self._search_by_vector(query_vector=embedding_result.vector, top_k=top_k, db=db)
+        retrieval_seconds = time.perf_counter() - retrieval_started_at
+        search_seconds = time.perf_counter() - started_at
+        self._logger.info(
+            "Text search completed: device=%s top_k=%s results=%s embedding_ms=%.2f retrieval_ms=%.2f search_ms=%.2f query=%s",
+            self.settings.device,
+            top_k,
+            len(results),
+            embedding_result.inference_seconds * 1000,
+            retrieval_seconds * 1000,
+            search_seconds * 1000,
+            query_text,
+        )
+        return {
+            "results": results,
+            "embedding_ms": embedding_result.inference_seconds * 1000,
+            "retrieval_ms": retrieval_seconds * 1000,
+            "elapsed_ms": search_seconds * 1000,
+        }
 
     def _search_by_vector(self, query_vector: list[float], top_k: int, db: Session) -> list[dict]:
         stmt = select(ImageRecord).where(ImageRecord.status == ImageStatus.READY.value)

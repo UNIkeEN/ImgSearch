@@ -4,9 +4,16 @@ from pathlib import Path
 
 
 @dataclass
+class EmbeddingResult:
+    vector: list[float]
+    inference_seconds: float
+
+
+@dataclass
 class ModelRuntimeStatus:
     backend: str
     repo_id: str
+    device: str
     loaded: bool
     healthy: bool
     busy: bool
@@ -23,9 +30,9 @@ class EmbeddingBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def embed_image(self, image_path: Path) -> list[float]:
+    def embed_image(self, image_path: Path) -> EmbeddingResult:
         raise NotImplementedError
 
     @abstractmethod
-    def embed_text(self, text: str) -> list[float]:
+    def embed_text(self, text: str) -> EmbeddingResult:
         raise NotImplementedError

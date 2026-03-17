@@ -1,6 +1,7 @@
 import importlib.util
 import inspect
 import threading
+import time
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
@@ -13,7 +14,7 @@ except ImportError:  # pragma: no cover - compatibility for older huggingface_hu
 
 from app.config import Settings
 from app.logging_utils import get_logger
-from app.services.model_backends.base import EmbeddingBackend, ModelRuntimeStatus
+from app.services.model_backends.base import EmbeddingBackend, EmbeddingResult, ModelRuntimeStatus
 
 
 class QwenLocalEmbeddingBackend(EmbeddingBackend):
@@ -21,6 +22,7 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         self.settings = settings
         self._instance = None
         self._lock = threading.Lock()
+        self._inference_lock = threading.Lock()
         self._busy = False
         self._last_error: str | None = None
         self._logger = get_logger(__name__)
@@ -166,36 +168,43 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         return ModelRuntimeStatus(
             backend=self.settings.model_source,
             repo_id=self.settings.model_repo_id,
+            device=self.settings.device,
             loaded=loaded,
             healthy=healthy,
             busy=self._busy,
             message=message,
         )
 
-    def embed_image(self, image_path: Path) -> list[float]:
+    def embed_image(self, image_path: Path) -> EmbeddingResult:
         self._busy = True
         try:
             instance = self._ensure_loaded()
-            candidate_calls = [
-                lambda: instance.process([{"image": str(image_path)}]),
-                lambda: instance.embed_image(str(image_path)),
-            ]
-            first_vector = None
-            last_error = None
-            for candidate in candidate_calls:
-                try:
-                    result = candidate()
-                    first_vector = self._extract_first_vector(result)
-                    if first_vector is not None:
-                        break
-                except Exception as exc:  # noqa: BLE001
-                    last_error = exc
+            with self._inference_lock:
+                started_at = time.perf_counter()
+                candidate_calls = [
+                    lambda: instance.process([{"image": str(image_path)}]),
+                    lambda: instance.embed_image(str(image_path)),
+                ]
+                first_vector = None
+                last_error = None
+                for candidate in candidate_calls:
+                    try:
+                        result = candidate()
+                        first_vector = self._extract_first_vector(result)
+                        if first_vector is not None:
+                            break
+                    except Exception as exc:  # noqa: BLE001
+                        last_error = exc
+                inference_seconds = time.perf_counter() - started_at
             if first_vector is None:
                 if last_error is not None:
                     raise RuntimeError(f"Image embedding failed: {last_error}") from last_error
                 raise RuntimeError("Embedding backend returned no vectors.")
 
-            return self._normalize_vector(first_vector)
+            return EmbeddingResult(
+                vector=self._normalize_vector(first_vector),
+                inference_seconds=inference_seconds,
+            )
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
             self._logger.exception("Image embedding failed: image_path=%s", image_path)
@@ -203,12 +212,18 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         finally:
             self._busy = False
 
-    def embed_text(self, text: str) -> list[float]:
+    def embed_text(self, text: str) -> EmbeddingResult:
         self._busy = True
         try:
             instance = self._ensure_loaded()
-            first_vector = self._invoke_text_embedding(instance, text)
-            return self._normalize_vector(first_vector)
+            with self._inference_lock:
+                started_at = time.perf_counter()
+                first_vector = self._invoke_text_embedding(instance, text)
+                inference_seconds = time.perf_counter() - started_at
+            return EmbeddingResult(
+                vector=self._normalize_vector(first_vector),
+                inference_seconds=inference_seconds,
+            )
         except Exception as exc:  # noqa: BLE001
             self._last_error = str(exc)
             self._logger.exception("Text embedding failed: query=%s", text)

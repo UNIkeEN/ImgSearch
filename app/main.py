@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db import Base, SessionLocal, engine, get_db
+from app.db import Base, SessionLocal, engine, ensure_schema, get_db
 from app.dependencies import get_image_service, get_model_service
 from app.gradio_ui import build_gradio_app
 from app.logging_utils import get_logger
@@ -36,6 +36,7 @@ def to_image_response(record: ImageRecord) -> ImageResponse:
         filename=record.filename,
         file_url=to_file_url(record),
         status=ImageStatus(record.status),
+        embedding_elapsed_ms=record.embedding_elapsed_ms,
         error_message=record.error_message,
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -56,6 +57,7 @@ def process_image_embedding(image_id: int):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema()
     model_service = get_model_service()
     try:
         model_service.load()
@@ -138,7 +140,7 @@ async def search_images(
     image_service: ImageService = Depends(get_image_service),
 ):
     try:
-        results = image_service.search_by_text(query_text=query, top_k=top_k, db=db)
+        search_payload = image_service.search_by_text(query_text=query, top_k=top_k, db=db)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Text search failed: query=%s", query)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -146,6 +148,9 @@ async def search_images(
     return SearchResponse(
         status="success",
         query_status=ImageStatus.READY,
+        elapsed_ms=search_payload["elapsed_ms"],
+        embedding_ms=search_payload["embedding_ms"],
+        retrieval_ms=search_payload["retrieval_ms"],
         results=[
             SearchResult(
                 id=item["id"],
@@ -155,7 +160,7 @@ async def search_images(
                 score=item["score"],
                 status=ImageStatus(item["status"]),
             )
-            for item in results
+            for item in search_payload["results"]
         ],
     )
 
@@ -182,6 +187,7 @@ def model_status(model_service: ModelService = Depends(get_model_service)):
     return ModelStatusResponse(
         backend=status.backend,
         repo_id=status.repo_id,
+        device=status.device,
         loaded=status.loaded,
         healthy=status.healthy,
         busy=status.busy,

@@ -21,6 +21,9 @@ def _build_cards(items: list[dict], api_base_url: str, show_score: bool = False)
         score_html = ""
         if show_score and item.get("score") is not None:
             score_html = f"<div><strong>相似度:</strong> {float(item['score']):.4f}</div>"
+        embedding_ms_html = ""
+        if item.get("embedding_elapsed_ms") is not None:
+            embedding_ms_html = f"<div><strong>Embedding 耗时:</strong> {float(item['embedding_elapsed_ms']):.2f} ms</div>"
         error_html = ""
         if item.get("error_message"):
             error_html = f"<div style='color:#b91c1c;'><strong>错误:</strong> {escape(str(item['error_message']))}</div>"
@@ -36,6 +39,7 @@ def _build_cards(items: list[dict], api_base_url: str, show_score: bool = False)
                   <div><strong>状态:</strong> {escape(str(item['status']))}</div>
                   <div><strong>文件名:</strong> {escape(item['filename'])}</div>
                   {score_html}
+                  {embedding_ms_html}
                 </div>
                 {error_html}
               </div>
@@ -62,13 +66,16 @@ def build_gradio_app() -> gr.Blocks:
         with gr.Tab("添加图片"):
             name_input = gr.Textbox(label="图片名称")
             file_input = gr.File(label="上传图片", type="filepath")
+            add_status = gr.HTML(label="处理状态")
             add_output = gr.JSON(label="API Response")
 
             def add_image(name: str, file_path: str | None, request: gr.Request):
                 if not name.strip():
-                    return {"detail": "name is required"}
+                    payload = {"detail": "name is required"}
+                    return "<div style='color:#b91c1c;'>请输入图片名称</div>", payload
                 if not file_path:
-                    return {"detail": "file is required"}
+                    payload = {"detail": "file is required"}
+                    return "<div style='color:#b91c1c;'>请选择图片文件</div>", payload
                 api_base_url = _api_base_from_request(request)
                 with open(file_path, "rb") as file_obj:
                     response = requests.post(
@@ -77,9 +84,33 @@ def build_gradio_app() -> gr.Blocks:
                         files={"file": (Path(file_path).name, file_obj, "application/octet-stream")},
                         timeout=300,
                     )
-                return response.json()
+                payload = response.json()
+                image_id = payload.get("id") if isinstance(payload, dict) else None
+                if not image_id:
+                    return "<div style='color:#b91c1c;'>添加图片失败，未返回图片 ID</div>", payload
 
-            gr.Button("调用添加 API", variant="primary").click(add_image, [name_input, file_input], add_output)
+                detail_response = requests.get(f"{api_base_url}/api/images", timeout=300)
+                detail_payload = detail_response.json()
+                record = next((item for item in detail_payload if item.get("id") == image_id), None) if isinstance(detail_payload, list) else None
+
+                if record is None:
+                    return "<div style='color:#b91c1c;'>图片已提交，但未能读取处理状态</div>", payload
+
+                if record.get("embedding_elapsed_ms") is not None:
+                    status_html = (
+                        "<div style='padding:12px 16px;border:1px solid #bbf7d0;border-radius:14px;background:#f0fdf4;color:#166534;'>"
+                        f"图片已完成 embedding，耗时 {float(record['embedding_elapsed_ms']):.2f} ms。"
+                        "</div>"
+                    )
+                else:
+                    status_html = (
+                        "<div style='padding:12px 16px;border:1px solid #fde68a;border-radius:14px;background:#fffbeb;color:#92400e;'>"
+                        "图片已提交，embedding 仍在后台处理中。刷新“状态”页签可查看最终耗时。"
+                        "</div>"
+                    )
+                return status_html, payload
+
+            gr.Button("调用添加 API", variant="primary").click(add_image, [name_input, file_input], [add_status, add_output])
 
         with gr.Tab("删除图片"):
             delete_id_input = gr.Number(label="图片 ID", precision=0)
@@ -97,13 +128,14 @@ def build_gradio_app() -> gr.Blocks:
         with gr.Tab("文本搜索"):
             query_input = gr.Textbox(label="搜索文本", lines=3, placeholder="例如：黑色钱包、带钥匙扣的蓝色书包")
             top_k_input = gr.Slider(label="Top K", minimum=1, maximum=20, step=1, value=5)
+            search_metrics = gr.HTML(label="搜索耗时")
             search_cards = gr.HTML(label="搜索结果")
             search_output = gr.JSON(label="API Response")
 
             def search_image(query_text: str, top_k: int, request: gr.Request):
                 if not query_text.strip():
                     payload = {"detail": "query is required"}
-                    return "<div style='color:#b91c1c;'>请输入搜索文本</div>", payload
+                    return "<div style='color:#b91c1c;'>请输入搜索文本</div>", "<div></div>", payload
                 api_base_url = _api_base_from_request(request)
                 response = requests.post(
                     f"{api_base_url}/api/images/search",
@@ -112,12 +144,22 @@ def build_gradio_app() -> gr.Blocks:
                 )
                 payload = response.json()
                 results = payload.get("results", []) if isinstance(payload, dict) else []
-                return _build_cards(results, api_base_url, show_score=True), payload
+                metrics_html = (
+                    "<div style='padding:12px 16px;border:1px solid #bfdbfe;border-radius:14px;"
+                    "background:linear-gradient(180deg,#eff6ff 0%,#dbeafe 100%);color:#1e3a8a;'>"
+                    f"<strong>Embedding:</strong> {float(payload.get('embedding_ms', 0.0)):.2f} ms"
+                    " &nbsp;|&nbsp; "
+                    f"<strong>检索:</strong> {float(payload.get('retrieval_ms', 0.0)):.2f} ms"
+                    " &nbsp;|&nbsp; "
+                    f"<strong>总耗时:</strong> {float(payload.get('elapsed_ms', 0.0)):.2f} ms"
+                    "</div>"
+                )
+                return metrics_html, _build_cards(results, api_base_url, show_score=True), payload
 
             gr.Button("调用搜索 API", variant="primary").click(
                 search_image,
                 [query_input, top_k_input],
-                [search_cards, search_output],
+                [search_metrics, search_cards, search_output],
             )
 
         with gr.Tab("状态"):

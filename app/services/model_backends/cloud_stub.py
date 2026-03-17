@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.services.model_backends.base import EmbeddingBackend, ModelRuntimeStatus
+from app.services.model_backends.base import EmbeddingBackend, EmbeddingResult, ModelRuntimeStatus
 
 
 class CloudEmbeddingBackendStub(EmbeddingBackend):
@@ -16,14 +16,15 @@ class CloudEmbeddingBackendStub(EmbeddingBackend):
         return ModelRuntimeStatus(
             backend="cloud_stub",
             repo_id=self.repo_id,
+            device="n/a",
             loaded=False,
             healthy=False,
             busy=False,
             message="Cloud backend stub is not implemented yet.",
         )
 
-    def embed_image(self, image_path: Path) -> list[float]:
+    def embed_image(self, image_path: Path) -> EmbeddingResult:
         raise NotImplementedError(f"Cloud embedding backend is not implemented for {image_path}.")
 
-    def embed_text(self, text: str) -> list[float]:
+    def embed_text(self, text: str) -> EmbeddingResult:
         raise NotImplementedError(f"Cloud embedding backend is not implemented for text query: {text}")

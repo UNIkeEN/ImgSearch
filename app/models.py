@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -24,6 +24,7 @@ class ImageRecord(Base):
     stored_path: Mapped[str] = mapped_column(Text, unique=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     embedding_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding_elapsed_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default=ImageStatus.PENDING.value, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

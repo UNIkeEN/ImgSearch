@@ -27,6 +27,7 @@ FastAPI 也会自动生成：
   "filename": "wallet.jpg",
   "file_url": "/uploads/9e4e.../wallet.jpg",
   "status": "pending",
+  "embedding_elapsed_ms": null,
   "error_message": null,
   "created_at": "2026-03-16T16:40:00",
   "updated_at": "2026-03-16T16:40:00"
@@ -69,6 +70,9 @@ FastAPI 也会自动生成：
 {
   "status": "success",
   "query_status": "ready",
+  "elapsed_ms": 123.45,
+  "embedding_ms": 98.76,
+  "retrieval_ms": 24.69,
   "results": [
     {
       "id": 1,
@@ -100,6 +104,7 @@ FastAPI 也会自动生成：
 {
   "backend": "local_huggingface_qwen",
   "repo_id": "Qwen/Qwen3-VL-Embedding-2B",
+  "device": "cpu",
   "loaded": true,
   "healthy": true,
   "busy": false,
