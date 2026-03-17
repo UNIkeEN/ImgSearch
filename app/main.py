@@ -187,7 +187,8 @@ def model_status(model_service: ModelService = Depends(get_model_service)):
     return ModelStatusResponse(
         backend=status.backend,
         repo_id=status.repo_id,
-        device=status.device,
+        configured_device=status.configured_device,
+        actual_device=status.actual_device,
         loaded=status.loaded,
         healthy=status.healthy,
         busy=status.busy,

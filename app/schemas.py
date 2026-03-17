@@ -45,7 +45,8 @@ class SearchResponse(BaseModel):
 class ModelStatusResponse(BaseModel):
     backend: str
     repo_id: str
-    device: str
+    configured_device: str
+    actual_device: str
     loaded: bool
     healthy: bool
     busy: bool

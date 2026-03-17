@@ -25,6 +25,7 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         self._inference_lock = threading.Lock()
         self._busy = False
         self._last_error: str | None = None
+        self._actual_device = "unknown"
         self._logger = get_logger(__name__)
 
     def _load_module(self, module_path: Path):
@@ -73,8 +74,14 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
                 raise RuntimeError("Qwen3VLEmbedder was not found in downloaded model repository.")
 
             self._instance = self._build_embedder(embedder_cls, str(repo_path))
+            self._actual_device = self._detect_device(self._instance)
             self._last_error = None
-            self._logger.info("Qwen embedder loaded successfully: repo=%s device=%s", repo_path, self.settings.device)
+            self._logger.info(
+                "Qwen embedder loaded successfully: repo=%s configured_device=%s actual_device=%s",
+                repo_path,
+                self.settings.device,
+                self._actual_device,
+            )
             return self._instance
 
     def _build_embedder(self, embedder_cls, repo_path: str):
@@ -110,6 +117,24 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
                     to_method(self.settings.device)
                 except TypeError:
                     continue
+
+    def _detect_device(self, instance) -> str:
+        targets = [getattr(instance, "model", None), instance]
+        for target in targets:
+            if target is None:
+                continue
+            device_attr = getattr(target, "device", None)
+            if device_attr is not None:
+                return str(device_attr)
+            parameters_method = getattr(target, "parameters", None)
+            if callable(parameters_method):
+                try:
+                    first_param = next(parameters_method())
+                except (StopIteration, TypeError):
+                    first_param = None
+                if first_param is not None:
+                    return str(first_param.device)
+        return "unknown"
 
     def load(self) -> None:
         self._busy = True
@@ -168,7 +193,8 @@ class QwenLocalEmbeddingBackend(EmbeddingBackend):
         return ModelRuntimeStatus(
             backend=self.settings.model_source,
             repo_id=self.settings.model_repo_id,
-            device=self.settings.device,
+            configured_device=self.settings.device,
+            actual_device=self._actual_device,
             loaded=loaded,
             healthy=healthy,
             busy=self._busy,

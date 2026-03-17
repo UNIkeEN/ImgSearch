@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -32,6 +33,8 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+    if settings.device.strip().lower() == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.model_cache_dir.mkdir(parents=True, exist_ok=True)
     if settings.model_local_path is not None:

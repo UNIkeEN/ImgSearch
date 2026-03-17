@@ -13,7 +13,8 @@ class EmbeddingResult:
 class ModelRuntimeStatus:
     backend: str
     repo_id: str
-    device: str
+    configured_device: str
+    actual_device: str
     loaded: bool
     healthy: bool
     busy: bool

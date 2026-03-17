@@ -104,7 +104,8 @@ FastAPI 也会自动生成：
 {
   "backend": "local_huggingface_qwen",
   "repo_id": "Qwen/Qwen3-VL-Embedding-2B",
-  "device": "cpu",
+  "configured_device": "cpu",
+  "actual_device": "cpu",
   "loaded": true,
   "healthy": true,
   "busy": false,

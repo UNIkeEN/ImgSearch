@@ -16,7 +16,8 @@ class CloudEmbeddingBackendStub(EmbeddingBackend):
         return ModelRuntimeStatus(
             backend="cloud_stub",
             repo_id=self.repo_id,
-            device="n/a",
+            configured_device="n/a",
+            actual_device="n/a",
             loaded=False,
             healthy=False,
             busy=False,
